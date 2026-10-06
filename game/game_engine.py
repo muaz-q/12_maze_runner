@@ -1,5 +1,7 @@
 import pygame
 import time
+import json
+from pathlib import Path
 from collections import deque
 from game.maze import generate_maze, CELL
 from game.player import Player
@@ -12,6 +14,7 @@ COLS, ROWS = 15, 13
 
 WIDTH = COLS * CELL
 HEIGHT = ROWS * CELL + 60
+LEADERBOARD_FILE = Path(__file__).resolve().parent.parent / "leaderboard.json"
 
 class GameEngine:
     def __init__(self):
@@ -21,7 +24,45 @@ class GameEngine:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("monospace", 22)
         self.big_font = pygame.font.SysFont("monospace", 36, bold=True)
+        self.leaderboard = self.load_leaderboard()
         self.reset()
+
+    def load_leaderboard(self):
+        """Load the best five completion times from leaderboard.json safely."""
+        try:
+            with LEADERBOARD_FILE.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+
+            if not isinstance(data, list):
+                return []
+
+            times = []
+            for value in data:
+                try:
+                    value = float(value)
+                    if value >= 0:
+                        times.append(value)
+                except (TypeError, ValueError):
+                    continue
+
+            return sorted(times)[:5]
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return []
+
+    def save_leaderboard(self):
+        """Persist the best five completion times to leaderboard.json."""
+        try:
+            with LEADERBOARD_FILE.open("w", encoding="utf-8") as file:
+                json.dump(self.leaderboard[:5], file, indent=2)
+        except OSError:
+            pass
+
+    def add_completion_time(self, completion_time):
+        """Add a completion time and keep only the five fastest times."""
+        self.leaderboard.append(float(completion_time))
+        self.leaderboard.sort()
+        self.leaderboard = self.leaderboard[:5]
+        self.save_leaderboard()
 
     def reset(self):
         self.walls = generate_maze(COLS, ROWS)
@@ -33,6 +74,7 @@ class GameEngine:
         self.show_solution = False
         self.solution_path = []
         self.fog_radius_cells = 3
+        self.time_recorded = False
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -102,11 +144,19 @@ class GameEngine:
     def update(self):
         if self.won:
             return
+
         keys = pygame.key.get_pressed()
         self.player.move(keys, self.walls, ROWS, COLS)
         self.elapsed = time.time() - self.start_time
+
         if self.player.rect.colliderect(self.exit_rect):
+            # Capture the final completion time before stopping the timer.
+            self.elapsed = time.time() - self.start_time
             self.won = True
+
+            if not self.time_recorded:
+                self.add_completion_time(self.elapsed)
+                self.time_recorded = True
 
     def draw_maze(self):
         wall_w = 3
@@ -159,9 +209,24 @@ class GameEngine:
             overlay.fill((0,0,0,120))
             self.screen.blit(overlay, (0,0))
             msg = self.big_font.render(f"Solved in {self.elapsed:.1f}s!", True, (80,240,80))
+            self.screen.blit(msg, (WIDTH//2 - msg.get_width()//2, 35))
+
+            title = self.font.render("BEST 5 TIMES", True, (255, 215, 70))
+            self.screen.blit(title, (WIDTH//2 - title.get_width()//2, 95))
+
+            for index, completion_time in enumerate(self.leaderboard, start=1):
+                entry = self.font.render(
+                    f"{index}. {completion_time:.1f}s",
+                    True,
+                    (230, 230, 230),
+                )
+                self.screen.blit(
+                    entry,
+                    (WIDTH//2 - entry.get_width()//2, 130 + (index - 1) * 28),
+                )
+
             sub = self.font.render("Press R for a new maze", True, (200,200,200))
-            self.screen.blit(msg, (WIDTH//2 - msg.get_width()//2, ROWS*CELL//2 - 30))
-            self.screen.blit(sub, (WIDTH//2 - sub.get_width()//2, ROWS*CELL//2 + 20))
+            self.screen.blit(sub, (WIDTH//2 - sub.get_width()//2, ROWS*CELL - 35))
         pygame.display.flip()
 
     def run(self):
