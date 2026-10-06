@@ -1,5 +1,6 @@
 import pygame
 import time
+from collections import deque
 from game.maze import generate_maze, CELL
 from game.player import Player
 
@@ -29,14 +30,73 @@ class GameEngine:
         self.start_time = time.time()
         self.elapsed = 0
         self.won = False
+        self.show_solution = False
+        self.solution_path = []
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                self.reset()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    self.reset()
+                elif event.key == pygame.K_h:
+                    self.show_solution = not self.show_solution
+                    if self.show_solution:
+                        self.solution_path = self.find_shortest_path()
+                    else:
+                        self.solution_path = []
         return True
+
+    def find_shortest_path(self):
+        """Return the shortest wall-respecting path from the player to the exit."""
+        start = (
+            self.player.rect.centery // CELL,
+            self.player.rect.centerx // CELL,
+        )
+        goal = (ROWS - 1, COLS - 1)
+
+        queue = deque([start])
+        previous = {start: None}
+
+        # Each tuple is (row delta, col delta, wall index).
+        directions = [
+            (-1, 0, 0),  # North
+            (1, 0, 1),   # South
+            (0, 1, 2),   # East
+            (0, -1, 3),  # West
+        ]
+
+        while queue:
+            r, c = queue.popleft()
+            if (r, c) == goal:
+                break
+
+            for dr, dc, wall_index in directions:
+                nr, nc = r + dr, c + dc
+                if not (0 <= nr < ROWS and 0 <= nc < COLS):
+                    continue
+
+                # Only move through an opening in the current cell.
+                if self.walls[r][c][wall_index]:
+                    continue
+
+                if (nr, nc) in previous:
+                    continue
+
+                previous[(nr, nc)] = (r, c)
+                queue.append((nr, nc))
+
+        if goal not in previous:
+            return []
+
+        path = []
+        current = goal
+        while current is not None:
+            path.append(current)
+            current = previous[current]
+        path.reverse()
+        return path
 
     def update(self):
         if self.won:
@@ -61,6 +121,16 @@ class GameEngine:
     def draw(self):
         self.screen.fill(BG)
         self.draw_maze()
+
+        if self.show_solution:
+            for r, c in self.solution_path:
+                x, y = c * CELL, r * CELL
+                pygame.draw.rect(
+                    self.screen,
+                    (255, 215, 70),
+                    (x + 7, y + 7, CELL - 14, CELL - 14),
+                    border_radius=5,
+                )
         pygame.draw.rect(self.screen, EXIT_COLOR, self.exit_rect, border_radius=4)
         ex_label = self.font.render("EXIT", True, (20,80,20))
         self.screen.blit(ex_label, (self.exit_rect.x+2, self.exit_rect.y+4))
