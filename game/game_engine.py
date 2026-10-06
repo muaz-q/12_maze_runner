@@ -32,6 +32,7 @@ class GameEngine:
         self.won = False
         self.show_solution = False
         self.solution_path = []
+        self.fog_radius_cells = 3
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -134,6 +135,18 @@ class GameEngine:
         pygame.draw.rect(self.screen, EXIT_COLOR, self.exit_rect, border_radius=4)
         ex_label = self.font.render("EXIT", True, (20,80,20))
         self.screen.blit(ex_label, (self.exit_rect.x+2, self.exit_rect.y+4))
+
+        # Fog of war: cover the maze with a dark transparent overlay,
+        # then reveal a circular area with a radius of 3 cells around the player.
+        if not self.won:
+            fog = pygame.Surface((WIDTH, ROWS * CELL), pygame.SRCALPHA)
+            fog.fill((0, 0, 0, 235))
+            center = self.player.rect.center
+            reveal_radius = self.fog_radius_cells * CELL
+            pygame.draw.circle(fog, (0, 0, 0, 0), center, reveal_radius)
+            self.screen.blit(fog, (0, 0))
+
+        # Draw the player after the fog so the player remains visible.
         self.player.draw(self.screen)
 
         hud = pygame.Rect(0, ROWS*CELL, WIDTH, 60)
